@@ -32,7 +32,7 @@ class LogEntryCollection extends LazyCollection
     {
         $formatter = config('log-viewer.formatter', 'default');
 
-        if ( $formatter != 'default' ) 
+        if ( $formatter == 'default' ) 
         { 
             return new static(function () use ($raw ) {
             foreach (LogParser::parse($raw) as $entry) {
