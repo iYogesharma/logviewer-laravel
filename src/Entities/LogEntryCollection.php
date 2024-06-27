@@ -49,7 +49,7 @@ class LogEntryCollection extends LazyCollection
 
                     $entry = json_decode($row,true);
 
-                    if( $entry ) {
+                    if( $entry && gettype($entry) =='array' ) {
                         yield new JsonLogEntry($entry);
                     }
                    
