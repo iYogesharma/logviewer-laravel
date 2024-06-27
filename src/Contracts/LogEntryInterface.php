@@ -19,4 +19,10 @@ interface LogEntryInterface {
      * @return bool
      */
     public function isSameLevel($level);
+
+
+    /**
+     * Get the entry context as json pretty print.
+     */
+    public function context(int $options = JSON_PRETTY_PRINT): string;
 }

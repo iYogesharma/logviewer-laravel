@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace Arcanedev\LogViewer\Http\Controllers;
 
+use Arcanedev\LogViewer\Contracts\LogEntryInterface;
 use Arcanedev\LogViewer\Contracts\LogViewer as LogViewerContract;
-use Arcanedev\LogViewer\Entities\{LogEntry, LogEntryCollection};
+use Arcanedev\LogViewer\Entities\LogEntryCollection;
 use Arcanedev\LogViewer\Exceptions\LogNotFoundException;
 use Arcanedev\LogViewer\Tables\StatsTable;
 use Illuminate\Http\Request;
@@ -144,9 +145,10 @@ class LogViewerController extends Controller
     {
         $query   = $request->get('query');
 
-        if (is_null($query))
+        if (is_null($query)){
             return redirect()->route($this->showRoute, [$date]);
-
+        }
+        
         $log     = $this->getLogOrFail($date);
         $levels  = $this->logViewer->levelsNames();
         $needles = array_map(function ($needle) {
@@ -154,10 +156,12 @@ class LogViewerController extends Controller
         }, array_filter(explode(' ', $query)));
         $entries = $log->entries($level)
             ->unless(empty($needles), function (LogEntryCollection $entries) use ($needles) {
-                return $entries->filter(function (LogEntry $entry) use ($needles) {
+                return $entries->filter(function (LogEntryInterface $entry) use ($needles) {
                     foreach ([$entry->header, $entry->stack, $entry->context()] as $subject) {
-                        if (Str::containsAll(Str::lower($subject), $needles))
+                        if (Str::containsAll(Str::lower($subject), $needles)){
                             return true;
+                        }
+                           
                     }
 
                     return false;
