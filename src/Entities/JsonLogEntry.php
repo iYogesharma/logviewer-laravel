@@ -200,7 +200,7 @@ class JsonLogEntry implements Arrayable, Jsonable, JsonSerializable, LogEntryInt
      *
      * @return string
      */
-    public function context()
+    public function context(int $options = JSON_PRETTY_PRINT):string
     {
         return json_encode($this->context, JSON_PRETTY_PRINT);
     }

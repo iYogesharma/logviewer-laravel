@@ -124,7 +124,7 @@
                                 <th>@lang('ENV')</th>
                                 <th style="width: 120px;">@lang('Level')</th>
                                 <th style="width: 65px;">@lang('Time')</th>
-                                <th>@lang('Header')</th>
+                                <th>@lang('Message')</th>
                                 <th class="text-right">@lang('Actions')</th>
                             </tr>
                         </thead>
@@ -165,13 +165,13 @@
                                     <tr>
                                         <td colspan="5" class="stack">
                                             @if ($entry->hasStack())
-                                            <div class="stack-content collapse" id="log-stack-{{ $key }}">
+                                            <div class="stack-content collapse" id="log-stack-{{ $key }}" style="max-width:1000px">
                                                 {!! $entry->stack() !!}
                                             </div>
                                             @endif
 
                                             @if ($entry->hasContext())
-                                            <div class="stack-content collapse" id="log-context-{{ $key }}">
+                                            <div class="stack-content collapse" id="log-context-{{ $key }}" style="max-width:1000px">
                                                 <pre>{{ $entry->context() }}</pre>
                                             </div>
                                             @endif
