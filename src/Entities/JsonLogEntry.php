@@ -72,7 +72,7 @@ class JsonLogEntry implements Arrayable, Jsonable, JsonSerializable, LogEntryInt
      */
     private function setLevel($data)
     {
-        $this->level = strtolower($data['level_name']);
+        $this->level = strtolower($data['level_name'] ?? '');
 
         return $this;
     }
@@ -86,7 +86,7 @@ class JsonLogEntry implements Arrayable, Jsonable, JsonSerializable, LogEntryInt
      */
     private function setHeader($data)
     {
-        $this->setDatetime($data['datetime']);
+        $this->setDatetime($data['datetime'] ?? '');
 
         $header = $data['message'];
 
