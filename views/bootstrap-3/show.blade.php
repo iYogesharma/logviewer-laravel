@@ -172,7 +172,12 @@
 
                                             @if ($entry->hasContext())
                                             <div class="stack-content collapse" id="log-context-{{ $key }}" style="max-width:1000px">
-                                                <pre>{{ $entry->context() }}</pre>
+                                                <button onclick="copyToClipboard('{{ $key }}')" 
+                                                        class="btn btn-sm btn-light position-absolute top-0 end-0 m-2"  style="background:transparent;right:0"
+                                                        title="Copy">
+                                                    <i class="fa fa-clipboard"></i>
+                                                </button>
+                                                <pre id="log-content-{{ $key }}">{{ $entry->context() }}</pre>
                                             </div>
                                             @endif
                                         </td>
@@ -282,5 +287,20 @@
                 });
             @endunless
         });
+        function copyToClipboard(key) {
+            const content = document.getElementById("log-content-" + key).innerText;
+            navigator.clipboard.writeText(content).then(() => {
+                // Optional: Replace icon with checkmark for 1.5s
+                const btn = event.currentTarget;
+                const icon = btn.querySelector("i");
+                icon.classList.replace("bi-clipboard", "bi-clipboard-check");
+                setTimeout(() => {
+                    icon.classList.replace("bi-clipboard-check", "bi-clipboard");
+                }, 1500);
+
+            }).catch(err => {
+                console.error("Failed to copy: ", err);
+            });
+        }
     </script>
 @endsection

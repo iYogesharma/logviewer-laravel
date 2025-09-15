@@ -154,7 +154,7 @@ class LogViewerController extends Controller
         $needles = array_map(function ($needle) {
             return Str::lower($needle);
         }, array_filter(explode(' ', $query)));
-        $entries = $log->entries($level)->sortDesc()
+        $entries = $log->entries($level)
             ->unless(empty($needles), function (LogEntryCollection $entries) use ($needles) {
                 return $entries->filter(function (LogEntryInterface $entry) use ($needles) {
                     foreach ([$entry->header, $entry->stack, $entry->context()] as $subject) {
@@ -166,7 +166,7 @@ class LogViewerController extends Controller
 
                     return false;
                 });
-            })
+            })->sortDesc()
             ->paginate($this->perPage);
 
         return $this->view('show', compact('level', 'log', 'query', 'levels', 'entries'));
