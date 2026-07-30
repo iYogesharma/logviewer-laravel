@@ -53,7 +53,7 @@ Traditional log viewers eventually hit the same wall: opening or searching a lar
 ## Quick start
 
 ```bash
-composer require iyogesharma/log-viewer:^2.0
+composer require iyogesharma/log-viewer:^2.1
 ```
 
 <details>
