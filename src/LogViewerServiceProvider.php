@@ -87,7 +87,12 @@ class LogViewerServiceProvider extends PackageServiceProvider
             );
         });
 
-        $lockDir = config('log-viewer.streaming.index-path');
+        // Locks live under storage/ by default: it is already writable by the
+        // web user in every Laravel app, unlike a shared /tmp subdirectory that
+        // whichever process got there first may own. (Not storage/logs — the
+        // viewer lists that directory.)
+        $lockDir = config('log-viewer.streaming.lock-path')
+            ?: $this->app->storagePath('framework'.DIRECTORY_SEPARATOR.'log-viewer-locks');
 
         $this->app->singleton(Concurrency\BuildLock::class, function () use ($lockDir) {
             return new Concurrency\BuildLock($lockDir);

@@ -74,7 +74,7 @@ return [
     'per-page'      => 30,
 
     /* -----------------------------------------------------------------
-     |  Type of log formatter used 
+     |  Type of log formatter used
      | -----------------------------------------------------------------
      |  Supported formatters :
      |    'LineFormatter', 'JsonFormatter'
@@ -100,6 +100,11 @@ return [
 
         // Where to store `.idx` sidecars. null = beside each log file.
         'index-path'      => null,
+
+        // Where build lock files live. Must be writable by every process that
+        // reads the logs (php-fpm *and* whoever runs artisan).
+        // null = storage/framework/log-viewer-locks.
+        'lock-path'       => null,
 
         // Bounded window (bytes) served while a cold huge file's index warms.
         'tail-bytes'      => 25 * 1024 * 1024, // 25 MB

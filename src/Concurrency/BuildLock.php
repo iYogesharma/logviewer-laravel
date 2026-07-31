@@ -13,19 +13,11 @@ namespace Arcanedev\LogViewer\Concurrency;
  */
 class BuildLock
 {
-    /** @var string Directory holding lock files. */
-    protected $dir;
-
-    /** @var array<string,resource> Open lock handles keyed by lock path. */
-    protected $handles = [];
+    use ResolvesLockDirectory;
 
     public function __construct(?string $dir = null)
     {
-        $this->dir = $dir ?: sys_get_temp_dir().DIRECTORY_SEPARATOR.'log-viewer-locks';
-
-        if (! is_dir($this->dir)) {
-            @mkdir($this->dir, 0755, true);
-        }
+        $this->initLockDirectory($dir);
     }
 
     /**
@@ -36,12 +28,16 @@ class BuildLock
      */
     public function acquire(string $key, bool $blocking = false)
     {
-        $path   = $this->dir.DIRECTORY_SEPARATOR.'build-'.md5($key).'.lock';
-        $handle = fopen($path, 'c');
+        $opened = $this->openLockFile('build-'.md5($key).'.lock');
 
-        if ($handle === false) {
-            return null;
+        // No writable lock directory: proceed unlocked rather than never
+        // indexing at all. Index writes are atomic, so the cost is at worst a
+        // duplicated build.
+        if ($opened === null) {
+            return self::UNLOCKED;
         }
+
+        [$handle, $path] = $opened;
 
         $flags = LOCK_EX | ($blocking ? 0 : LOCK_NB);
 
@@ -57,16 +53,55 @@ class BuildLock
     }
 
     /**
-     * Release a previously acquired lock.
+     * Delete lock files that no longer belong to a live log.
      *
-     * @param  string|null  $token
+     * The files are empty, but one is created per log path, so daily rotation
+     * would otherwise leave one behind forever. Locks currently held are left
+     * alone, as are ones touched recently — an unheld-but-fresh lock may belong
+     * to a log this call simply doesn't know about.
+     *
+     * @param  array<int,string>  $validKeys  Log paths that should keep a lock.
+     * @return array<int,string>  Deleted lock paths.
      */
-    public function release($token): void
+    public function sweepStale(array $validKeys, int $minAge = 86400): array
     {
-        if ($token !== null && isset($this->handles[$token])) {
-            flock($this->handles[$token], LOCK_UN);
-            fclose($this->handles[$token]);
-            unset($this->handles[$token]);
+        if ($this->degraded || ! is_dir($this->dir)) {
+            return [];
         }
+
+        $keep = [];
+        foreach ($validKeys as $key) {
+            $keep['build-'.md5($key).'.lock'] = true;
+        }
+
+        $removed = [];
+        $cutoff  = time() - max(0, $minAge);
+
+        foreach ((array) glob($this->dir.DIRECTORY_SEPARATOR.'build-*.lock') as $path) {
+            if (isset($keep[basename($path)]) || (int) @filemtime($path) > $cutoff) {
+                continue;
+            }
+
+            // Skip anything a live worker is holding.
+            $handle = @fopen($path, 'c');
+
+            if ($handle === false) {
+                continue;
+            }
+
+            $free = flock($handle, LOCK_EX | LOCK_NB);
+
+            if ($free) {
+                flock($handle, LOCK_UN);
+            }
+
+            fclose($handle);
+
+            if ($free && @unlink($path)) {
+                $removed[] = $path;
+            }
+        }
+
+        return $removed;
     }
 }

@@ -15,23 +15,16 @@ namespace Arcanedev\LogViewer\Concurrency;
  */
 class BuildSemaphore
 {
-    /** @var string */
-    protected $dir;
+    use ResolvesLockDirectory;
 
     /** @var int */
     protected $max;
 
-    /** @var array<string,resource> */
-    protected $handles = [];
-
     public function __construct(int $max = 2, ?string $dir = null)
     {
         $this->max = max(1, $max);
-        $this->dir = $dir ?: sys_get_temp_dir().DIRECTORY_SEPARATOR.'log-viewer-locks';
 
-        if (! is_dir($this->dir)) {
-            @mkdir($this->dir, 0755, true);
-        }
+        $this->initLockDirectory($dir);
     }
 
     /**
@@ -42,12 +35,15 @@ class BuildSemaphore
     public function acquire()
     {
         for ($i = 0; $i < $this->max; $i++) {
-            $path   = $this->dir.DIRECTORY_SEPARATOR.'sem-'.$i.'.lock';
-            $handle = fopen($path, 'c');
+            $opened = $this->openLockFile('sem-'.$i.'.lock');
 
-            if ($handle === false) {
-                continue;
+            // No writable lock directory: don't wedge the engine into a
+            // permanent tail-only mode — run the build ungated.
+            if ($opened === null) {
+                return self::UNLOCKED;
             }
+
+            [$handle, $path] = $opened;
 
             if (flock($handle, LOCK_EX | LOCK_NB)) {
                 $this->handles[$path] = $handle;
@@ -59,19 +55,5 @@ class BuildSemaphore
         }
 
         return null;
-    }
-
-    /**
-     * Release a slot.
-     *
-     * @param  string|null  $token
-     */
-    public function release($token): void
-    {
-        if ($token !== null && isset($this->handles[$token])) {
-            flock($this->handles[$token], LOCK_UN);
-            fclose($this->handles[$token]);
-            unset($this->handles[$token]);
-        }
     }
 }
