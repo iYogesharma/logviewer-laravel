@@ -231,8 +231,9 @@ class StreamingEngineTest extends TestCase
     /** @test */
     public function it_serves_the_tail_while_another_worker_is_building(): void
     {
-        // Simulate a concurrent build by holding the per-file build lock.
-        $lock  = new BuildLock;
+        // Simulate a concurrent build by holding the per-file build lock. Use
+        // the container's instance so we share the app's configured lock dir.
+        $lock  = new BuildLock($this->app->make(BuildLock::class)->directory());
         $token = $lock->acquire($this->logPath, false);
         static::assertNotNull($token);
 
@@ -312,6 +313,103 @@ class StreamingEngineTest extends TestCase
 
         $sem->release($b);
         $sem2->release($c);
+    }
+
+    /** @test */
+    public function it_sweeps_stale_lock_files(): void
+    {
+        $dir  = sys_get_temp_dir().DIRECTORY_SEPARATOR.'lv-sweep-'.getmypid();
+        $lock = new BuildLock($dir);
+
+        $live  = $lock->acquire('/logs/live.log', false);
+        $stale = $lock->acquire('/logs/rotated-away.log', false);
+        $lock->release($stale);
+
+        // Age the stale one past the cutoff; the held one stays current.
+        touch($stale, time() - 2 * 86400);
+
+        $removed = $lock->sweepStale(['/logs/live.log']);
+
+        static::assertSame([$stale], $removed);
+        static::assertFileDoesNotExist($stale);
+        static::assertFileExists($live);
+
+        // Recent orphans are left alone until they age out.
+        $fresh = $lock->acquire('/logs/other.log', false);
+        $lock->release($fresh);
+        static::assertSame([], $lock->sweepStale(['/logs/live.log']));
+        static::assertFileExists($fresh);
+
+        $lock->release($live);
+        array_map('unlink', (array) glob($dir.DIRECTORY_SEPARATOR.'*.lock'));
+        @rmdir($dir);
+    }
+
+    /** @test */
+    public function unwritable_lock_directory_degrades_instead_of_failing(): void
+    {
+        $dir = sys_get_temp_dir().DIRECTORY_SEPARATOR.'lv-readonly-'.getmypid();
+        @mkdir($dir, 0500, true);
+        @chmod($dir, 0500);
+
+        if (is_writable($dir)) {
+            @rmdir($dir); // running as root: the scenario can't be reproduced.
+            static::markTestSkipped('Cannot create an unwritable directory as this user.');
+        }
+
+        // Force the read-only dir as the only candidate.
+        $lock = new class($dir) extends BuildLock {
+            public function __construct(string $dir)
+            {
+                parent::__construct($dir);
+                $this->fallbackDirs = [];
+            }
+        };
+
+        $sem = new class($dir) extends BuildSemaphore {
+            public function __construct(string $dir)
+            {
+                parent::__construct(2, $dir);
+                $this->fallbackDirs = [];
+            }
+        };
+
+        // No warning, no null: builds proceed unlocked rather than tailing forever.
+        $token = $lock->acquire('some-key', false);
+        static::assertNotNull($token);
+        static::assertTrue($lock->isDegraded());
+        $lock->release($token);
+
+        $slot = $sem->acquire();
+        static::assertNotNull($slot);
+        static::assertTrue($sem->isDegraded());
+        $sem->release($slot);
+
+        @rmdir($dir);
+    }
+
+    /** @test */
+    public function lock_directory_falls_back_when_the_preferred_one_is_unusable(): void
+    {
+        $bad = sys_get_temp_dir().DIRECTORY_SEPARATOR.'lv-readonly-fb-'.getmypid();
+        @mkdir($bad, 0500, true);
+        @chmod($bad, 0500);
+
+        if (is_writable($bad)) {
+            @rmdir($bad);
+            static::markTestSkipped('Cannot create an unwritable directory as this user.');
+        }
+
+        $lock  = new BuildLock($bad);
+        $token = $lock->acquire('fallback-key', false);
+
+        static::assertNotNull($token);
+        static::assertFalse($lock->isDegraded());
+        static::assertNotSame($bad, $lock->directory());
+        static::assertTrue(is_writable($lock->directory()));
+
+        $lock->release($token);
+        @rmdir($bad);
     }
 }
 

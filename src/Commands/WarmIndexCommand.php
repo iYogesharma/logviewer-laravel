@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Arcanedev\LogViewer\Commands;
 
+use Arcanedev\LogViewer\Concurrency\BuildLock;
 use Arcanedev\LogViewer\Contracts\IndexStore;
 use Arcanedev\LogViewer\Contracts\Utilities\Filesystem as FilesystemContract;
 use Arcanedev\LogViewer\Format\DriverRegistry;
@@ -114,6 +115,12 @@ class WarmIndexCommand extends Command
 
         if ($removed) {
             $this->line('<comment>sweep</comment> removed '.count($removed).' orphan index file(s).');
+        }
+
+        $locks = app(BuildLock::class)->sweepStale(array_values($files));
+
+        if ($locks) {
+            $this->line('<comment>sweep</comment> removed '.count($locks).' stale lock file(s).');
         }
     }
 
