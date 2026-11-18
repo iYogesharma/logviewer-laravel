@@ -214,10 +214,18 @@ class BinaryIndexStore implements IndexStore
         $glob    = glob(rtrim($dir, '/\\').DIRECTORY_SEPARATOR.'*.idx') ?: [];
 
         foreach ($glob as $idxPath) {
-            if (! isset($valid[$this->normalize($idxPath)])) {
-                @unlink($idxPath);
-                $deleted[] = $idxPath;
+            if (isset($valid[$this->normalize($idxPath)])) {
+                continue;
             }
+
+            // Beside the log (`app.log.idx`): an orphan only when that log is gone, whatever list was passed, so a
+            // sweep for some files never drops another file's index
+            if (! $this->indexPath && is_file(substr($idxPath, 0, -4))) {
+                continue;
+            }
+
+            @unlink($idxPath);
+            $deleted[] = $idxPath;
         }
 
         return $deleted;

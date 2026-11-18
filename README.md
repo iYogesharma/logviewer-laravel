@@ -179,6 +179,19 @@ Index one date:
 php artisan log-viewer:index 2026-07-23
 ```
 
+Index the files of named sources (any file name, e.g. per-client API or per-courier logs) instead of the dated logs:
+
+```bash
+php artisan log-viewer:index --source=system --source=api
+```
+
+Run it from the scheduler so nobody opens a large file before its index exists; after the first build each run only
+reads the bytes written since:
+
+```php
+$schedule->command('log-viewer:index --source=system --source=api')->everyFiveMinutes()->withoutOverlapping();
+```
+
 When logs live on a read-only or shared mount, configure a dedicated writable directory:
 
 ```php

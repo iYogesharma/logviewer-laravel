@@ -65,6 +65,14 @@ class LogPager
     }
 
     /**
+     * Run a query (levels, time window, search, page, histogram) over the index.
+     */
+    public function query(\Arcanedev\LogViewer\Query\LogQuery $query): \Arcanedev\LogViewer\Query\QueryResult
+    {
+        return app(\Arcanedev\LogViewer\Query\QueryReader::class)->run($this->logPath, $this->driver, $query);
+    }
+
+    /**
      * Lazily iterate all entries (file order), O(1) memory.
      *
      * @return \Generator<\Arcanedev\LogViewer\Contracts\LogEntryInterface>

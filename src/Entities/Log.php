@@ -47,8 +47,9 @@ class Log implements Arrayable, Jsonable, JsonSerializable
      * @param  string  $date
      * @param  string  $path
      * @param  string  $raw
+     * @param  \Arcanedev\LogViewer\Contracts\FormatDriver|null  $driver  Defaults to the configured formatter.
      */
-    public function __construct($date, $path, $raw = null)
+    public function __construct($date, $path, $raw = null, ?\Arcanedev\LogViewer\Contracts\FormatDriver $driver = null)
     {
         $this->date = $date;
         $this->path = $path;
@@ -57,7 +58,12 @@ class Log implements Arrayable, Jsonable, JsonSerializable
         // Classic path: eager (but lazily-yielded) entry collection.
         // When $raw is null the log is served through a streaming pager instead.
         if ($raw !== null) {
-            $this->entries = LogEntryCollection::load($raw);
+            // No driver given: the configured one, or per file when the formatter is `auto`.
+            if ($driver === null && function_exists('app') && app()->bound(\Arcanedev\LogViewer\Format\DriverRegistry::class)) {
+                $driver = app(\Arcanedev\LogViewer\Format\DriverRegistry::class)->forFile($path);
+            }
+
+            $this->entries = LogEntryCollection::load($raw, $driver);
         }
     }
 
@@ -192,11 +198,12 @@ class Log implements Arrayable, Jsonable, JsonSerializable
      *
      * @return \Illuminate\Pagination\LengthAwarePaginator
      */
-    public function paginate($level = 'all', $perPage = 30, $page = 1)
+    public function paginate($level = 'all', $perPage = 30, $page = null)
     {
+        // Classic path: a null page keeps the old behavior (the request's `page`).
         return $this->isStreaming()
-            ? $this->pager->paginate($level, $perPage, $page)
-            : $this->entries($level)->sortDesc()->paginate($perPage);
+            ? $this->pager->paginate($level, (int) $perPage, (int) ($page ?? 1))
+            : $this->entries($level)->sortDesc()->paginate($perPage, $page);
     }
 
     /**
@@ -209,10 +216,10 @@ class Log implements Arrayable, Jsonable, JsonSerializable
      *
      * @return \Illuminate\Pagination\LengthAwarePaginator
      */
-    public function search(array $needles, $level = 'all', $perPage = 30, $page = 1)
+    public function search(array $needles, $level = 'all', $perPage = 30, $page = null)
     {
         if ($this->isStreaming()) {
-            return $this->pager->searchEntries($needles, $level, $perPage, $page);
+            return $this->pager->searchEntries($needles, $level, (int) $perPage, (int) ($page ?? 1));
         }
 
         // Classic in-memory search (unchanged semantics).
@@ -229,7 +236,80 @@ class Log implements Arrayable, Jsonable, JsonSerializable
                 });
             })
             ->sortDesc()
-            ->paginate($perPage);
+            ->paginate($perPage, $page);
+    }
+
+    /**
+     * One page of entries newest-first for both paths, optionally searched. Unlike paginate()/search(), whose
+     * classic path sorts by comparing whole entry objects, the classic path here sorts by entry time.
+     *
+     * @param  array<int,string>  $needles  Lower-cased search words; empty = no search.
+     *
+     * @return \Illuminate\Pagination\LengthAwarePaginator
+     */
+    public function latest($level = 'all', int $perPage = 30, int $page = 1, array $needles = [])
+    {
+        if ($this->isStreaming()) {
+            return empty($needles)
+                ? $this->pager->paginate($level, $perPage, $page)
+                : $this->pager->searchEntries($needles, $level, $perPage, $page);
+        }
+
+        $entries = $this->newestFirst($level);
+
+        if ( ! empty($needles)) {
+            $entries = array_values(array_filter($entries, function ($entry) use ($needles) {
+                foreach ([$entry->header, $entry->stack, $entry->context()] as $subject) {
+                    if (\Illuminate\Support\Str::containsAll(\Illuminate\Support\Str::lower((string) $subject), $needles)) {
+                        return true;
+                    }
+                }
+
+                return false;
+            }));
+        }
+
+        return new \Illuminate\Pagination\LengthAwarePaginator(
+            array_slice($entries, ($page - 1) * $perPage, $perPage),
+            count($entries),
+            $perPage,
+            $page
+        );
+    }
+
+    /**
+     * Run a query (levels, time window, search, page, histogram) in one pass: over the index for a streamed log,
+     * over the parsed entries for a small one.
+     */
+    public function query(\Arcanedev\LogViewer\Query\LogQuery $query): \Arcanedev\LogViewer\Query\QueryResult
+    {
+        if ($this->isStreaming()) {
+            return $this->pager->query($query);
+        }
+
+        return \Arcanedev\LogViewer\Query\QueryReader::entries(
+            $this->newestFirst('all'),
+            $query,
+            new \Arcanedev\LogViewer\Query\QueryResult($query)
+        );
+    }
+
+    /**
+     * Entries newest first by entry time; for equal times the later line in the file first.
+     *
+     * @return array<int,\Arcanedev\LogViewer\Contracts\LogEntryInterface>
+     */
+    private function newestFirst(string $level): array
+    {
+        $keyed = [];
+        foreach (array_values($this->entries($level)->all()) as $i => $entry) {
+            $keyed[] = [$entry->datetime ? $entry->datetime->getTimestamp() : 0, $i, $entry];
+        }
+        usort($keyed, function ($a, $b) {
+            return [$b[0], $b[1]] <=> [$a[0], $a[1]];
+        });
+
+        return array_column($keyed, 2);
     }
 
     /**

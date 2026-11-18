@@ -137,6 +137,14 @@ class LogViewerServiceProvider extends PackageServiceProvider
             );
         });
 
+        $this->app->singleton(Query\QueryReader::class, function ($app) {
+            return new Query\QueryReader(
+                $app->make(Contracts\IndexStore::class),
+                $app->make(Index\IndexManager::class),
+                $app->make(Reader\TailReader::class)
+            );
+        });
+
         $this->app->singleton(Reader\ViewerLogFactory::class, function ($app) {
             return new Reader\ViewerLogFactory(
                 $app->make(Format\DriverRegistry::class),
