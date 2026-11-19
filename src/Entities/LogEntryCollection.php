@@ -25,12 +25,13 @@ class LogEntryCollection extends LazyCollection
      * Load raw log entries.
      *
      * @param  string  $raw
+     * @param  \Arcanedev\LogViewer\Contracts\FormatDriver|null  $driver  Defaults to the configured formatter.
      *
      * @return self
      */
-    public static function load($raw)
+    public static function load($raw, ?\Arcanedev\LogViewer\Contracts\FormatDriver $driver = null)
     {
-        $driver = static::resolveDriver();
+        $driver = $driver ?: static::resolveDriver();
 
         return new static(function () use ($raw, $driver) {
             yield from $driver->parse($raw);
@@ -58,13 +59,14 @@ class LogEntryCollection extends LazyCollection
     /**
      * Paginate log entries.
      *
-     * @param  int  $perPage
+     * @param  int       $perPage
+     * @param  int|null  $page     Defaults to the request's `page`.
      *
      * @return \Illuminate\Pagination\LengthAwarePaginator
      */
-    public function paginate($perPage = 20)
+    public function paginate($perPage = 20, $page = null)
     {
-        $page = request()->get('page', 1);
+        $page = $page ?? request()->get('page', 1);
         $path = request()->url();
 
         return new LengthAwarePaginator(

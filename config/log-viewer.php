@@ -63,7 +63,52 @@ return [
         ],
 
         'show' => 'log-viewer::logs.show',
+
+        /*
+         |  JSON API for SPA clients (React, Vue …), over the `sources` below. Off by default.
+         |  GET {prefix}/sources                               source names
+         |  GET {prefix}/sources/{source}/files                 files in a source
+         |  GET {prefix}/sources/{source}/files/{file}          ?level=&query=&page=&per_page=
+         |  GET {prefix}/sources/{source}/files/{file}/download
+         |  Never public: signed-in users only by default (`web`, `auth`), and the routes are not registered at all
+         |  when the middleware is empty. Add your own gate, e.g. ARCANEDEV_LOGVIEWER_API_MIDDLEWARE=web,auth,can:logs
+         */
+        'api' => [
+            'enabled'    => false,
+
+            'attributes' => [
+                'prefix'     => 'log-viewer/api',
+
+                'middleware' => env('ARCANEDEV_LOGVIEWER_API_MIDDLEWARE')
+                    ? explode(',', env('ARCANEDEV_LOGVIEWER_API_MIDDLEWARE'))
+                    : ['web', 'auth'],
+            ],
+        ],
     ],
+
+    /* -----------------------------------------------------------------
+     |  Log sources
+     | -----------------------------------------------------------------
+     |  Named groups of log files for log_viewer()->source($name) and the JSON API. Unlike the date pattern above,
+     |  any file name works.
+     |    'path'    => folder (default: storage-path)
+     |    'glob'    => file-name pattern(s), e.g. '*.log' or ['laravel*.log', 'worker*.log']
+     |    'exclude' => file-name pattern(s) to leave out
+     |    'format'  => 'auto' (detect JSON lines per file), 'default', 'json' or a driver registered with extend()
+     |  Hidden files and `.idx` index sidecars are never part of a source. For a per-tenant glob built at runtime,
+     |  escape the outside value: LogSource::escape($clientId).'_API_*.log'.
+     */
+
+    'sources'       => [
+        'all' => [
+            'glob'   => '*.log',
+            'format' => 'auto',
+        ],
+    ],
+
+    // A source file that is read whole (streaming off, or a format that cannot stream) over this size is refused
+    // (LogTooLargeException, HTTP 413 in the API): download it instead. 0 = no limit.
+    'max-inline-read-bytes' => 50 * 1024 * 1024,
 
     /* -----------------------------------------------------------------
      |  Log entries per page
@@ -77,7 +122,8 @@ return [
      |  Type of log formatter used
      | -----------------------------------------------------------------
      |  Supported formatters :
-     |    'LineFormatter', 'JsonFormatter'
+     |    'default' (Laravel's line format), 'json' (Monolog JSON lines),
+     |    'auto' (detected per file), or a driver registered with extend()
      */
 
     'formatter'     => 'default',

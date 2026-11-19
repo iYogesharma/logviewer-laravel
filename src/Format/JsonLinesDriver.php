@@ -46,22 +46,28 @@ class JsonLinesDriver implements FormatDriver
     {
         $data = json_decode($rawEntry, true);
 
-        return (is_array($data) && isset($data['level_name']))
-            ? strtolower($data['level_name'])
-            : null;
+        if ( ! is_array($data)) {
+            return null;
+        }
+
+        // Monolog, Logstash / ECS, pino and generic keys (see JsonLogEntry::normalize())
+        $level = JsonLogEntry::normalize($data)['level_name'];
+
+        return $level === '' ? null : $level;
     }
 
     public function timestampOf(string $rawEntry): ?int
     {
         $data = json_decode($rawEntry, true);
 
-        if (is_array($data) && isset($data['datetime'])) {
-            $ts = strtotime($data['datetime']);
-
-            return $ts === false ? null : $ts;
+        if ( ! is_array($data)) {
+            return null;
         }
 
-        return null;
+        $time = JsonLogEntry::normalize($data)['datetime'];
+        $ts   = is_string($time) && $time !== '' ? strtotime($time) : false;
+
+        return $ts === false ? null : $ts;
     }
 
     public function supportsStreaming(): bool

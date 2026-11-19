@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Arcanedev\LogViewer\Providers;
 
+use Arcanedev\LogViewer\Http\Routes\ApiRoute;
 use Arcanedev\LogViewer\Http\Routes\LogViewerRoute;
 use Arcanedev\Support\Providers\RouteServiceProvider as ServiceProvider;
 
@@ -39,11 +40,27 @@ class RouteServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        if ($this->isEnabled()) {
-            $this->routes(function () {
-                static::mapRouteClasses([LogViewerRoute::class]);
+        // One routes() callback: a second call would replace the first.
+        $classes = array_merge(
+            $this->isEnabled() ? [LogViewerRoute::class] : [],
+            $this->isApiEnabled() ? [ApiRoute::class] : []
+        );
+
+        if ( ! empty($classes)) {
+            $this->routes(function () use ($classes) {
+                static::mapRouteClasses($classes);
             });
         }
+    }
+
+    /**
+     * Check if the JSON API routes are enabled: off unless configured, and never without middleware (fail closed,
+     * so logs are not served publicly by mistake).
+     */
+    public function isApiEnabled(): bool
+    {
+        return (bool) $this->config('api.enabled', false)
+            && ! empty($this->config('api.attributes.middleware'));
     }
 
     /* -----------------------------------------------------------------

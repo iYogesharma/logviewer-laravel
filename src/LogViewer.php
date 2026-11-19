@@ -95,6 +95,36 @@ class LogViewer implements LogViewerContract
     }
 
     /**
+     * A named group of log files (`config('log-viewer.sources')`), any file name, format per file.
+     * `$overrides` replace the configured keys for this call, e.g. a per-tenant glob:
+     *   log_viewer()->source('api', ['glob' => LogSource::escape($clientId).'_API_*.log'])->files();
+     * Escape any outside value put in a glob, or `*` in it would match other tenants' files.
+     *
+     * @throws \Arcanedev\LogViewer\Exceptions\LogViewerException  When the name is neither configured nor given a glob.
+     */
+    public function source(string $name, array $overrides = []): Sources\LogSource
+    {
+        // Indexed directly (not with dot notation), so a name may contain dots.
+        $definition = ((array) config('log-viewer.sources', []))[$name] ?? null;
+
+        if ( ! is_array($definition) && ! isset($overrides['glob'])) {
+            throw new Exceptions\LogViewerException("Log source [{$name}] is not configured.");
+        }
+
+        return new Sources\LogSource($name, $overrides + (array) $definition);
+    }
+
+    /**
+     * Names of the configured log sources.
+     *
+     * @return array<int,string>
+     */
+    public function sources(): array
+    {
+        return array_keys((array) config('log-viewer.sources', []));
+    }
+
+    /**
      * Get the log levels.
      *
      * @param bool $flip

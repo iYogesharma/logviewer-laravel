@@ -32,7 +32,9 @@ class WarmIndexCommand extends Command
     protected $description = 'Build (warm) the streaming index for large log files.';
 
     /** @var string */
-    protected $signature   = 'log-viewer:index {date? : Only index this date (Y-m-d)}';
+    protected $signature   = 'log-viewer:index
+                              {date? : Only index this date (Y-m-d)}
+                              {--source=* : Index the files of these log sources (config log-viewer.sources) instead of the dated logs}';
 
     /* -----------------------------------------------------------------
      |  Main Methods
@@ -61,8 +63,9 @@ class WarmIndexCommand extends Command
         }
 
         $manager  = app(IndexManager::class);
-        $files    = app(FilesystemContract::class)->dates(true);
-        $only     = $this->argument('date');
+        $sources  = array_filter((array) $this->option('source'));
+        $files    = $sources ? $this->sourceFiles($sources) : app(FilesystemContract::class)->dates(true);
+        $only     = $sources ? null : $this->argument('date');
         $maxInline = (int) config('log-viewer.streaming.max-inline-bytes', 2 * 1024 * 1024);
 
         $indexed = 0;
@@ -79,14 +82,15 @@ class WarmIndexCommand extends Command
                 continue;
             }
 
-            $header = $manager->warm($path, $driver);
+            // Per file: same driver unless the formatter is `auto`.
+            $header = $manager->warm($path, app(DriverRegistry::class)->forFile($path));
             $indexed++;
 
             $this->line("<info>index</info> {$date} — {$header->entryCount} entries (".$this->human($size).")");
         }
 
-        // Drop index sidecars whose source log has been removed (e.g. by
-        // logrotate or a manual delete outside the package).
+        // Drop index sidecars whose log has been removed (e.g. by logrotate,
+        // a cleanup job or a manual delete outside the package).
         if ($only === null) {
             $this->sweepOrphans($files);
         }
@@ -102,6 +106,34 @@ class WarmIndexCommand extends Command
      *
      * @param  array<string,string>  $files  date => log path
      */
+    /**
+     * The files of the named sources, as name => path (a file in two sources once).
+     *
+     * @param  string[]  $sources
+     *
+     * @return array<string, string>
+     */
+    private function sourceFiles(array $sources): array
+    {
+        $files = [];
+
+        foreach ($sources as $name) {
+            try {
+                $source = log_viewer()->source($name);
+            }
+            catch (\Arcanedev\LogViewer\Exceptions\LogViewerException $e) {
+                $this->warn($e->getMessage());
+                continue;
+            }
+
+            foreach ($source->files() as $file) {
+                $files[$file['name']] = (string) $source->path($file['name']);
+            }
+        }
+
+        return $files;
+    }
+
     private function sweepOrphans(array $files): void
     {
         $dir = config('log-viewer.streaming.index-path')
@@ -111,7 +143,17 @@ class WarmIndexCommand extends Command
             return;
         }
 
-        $removed = app(IndexStore::class)->sweepOrphans($dir, array_values($files));
+        // Every file still in the logs folder(s) keeps its index, not only the ones this run covered
+        $present = [];
+        foreach (array_unique(array_map('dirname', array_values($files))) as $logDir) {
+            foreach (@scandir($logDir) ?: [] as $name) {
+                if (is_file($path = $logDir.DIRECTORY_SEPARATOR.$name)) {
+                    $present[] = $path;
+                }
+            }
+        }
+
+        $removed = app(IndexStore::class)->sweepOrphans($dir, $present);
 
         if ($removed) {
             $this->line('<comment>sweep</comment> removed '.count($removed).' orphan index file(s).');
